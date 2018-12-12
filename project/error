@@ -1,0 +1,29 @@
+mttpdServer.cc:25:1: error: expected ‘}’ at end of input
+ }
+ ^
+In file included from HttpdServer.hpp:5:0,
+                 from HttpdServer.cc:1:
+ProtocolUtil.hpp: In member function ‘void Request::UriParse()’:
+ProtocolUtil.hpp:122:9: error: a function-definition is not allowed here before ‘{’ token
+         {
+         ^
+ProtocolUtil.hpp:204:1: error: expected ‘}’ at end of input
+ };
+ ^
+In file included from HttpdServer.hpp:5:0,
+                 from HttpdServer.cc:1:
+ProtocolUtil.hpp: In static member function ‘static void* Request::Entry::RequestHandler(void*)’:
+ProtocolUtil.hpp:345:24: error: ‘class Request’ has no member named ‘CheckMethodLegal’
+             if (!(rq_->CheckMethodLegal()) )//判断方法的合法性，顺便判断后面处理数据是否需要使用cgi
+                        ^
+ProtocolUtil.hpp:354:23: error: ‘class Request’ has no member named ‘CheckPathLegal’
+             if (!rq_->CheckPathLegal( ))
+                       ^
+ProtocolUtil.hpp:366:22: error: ‘class Request’ has no member named ‘RequestHeadParse’
+             if (rq_->RequestHeadParse())
+                      ^
+HttpdServer.cc: At global scope:
+HttpdServer.cc:25:1: error: expected unqualified-id at end of input
+ }
+ ^
+make: *** [HttpdServer] Error 1
