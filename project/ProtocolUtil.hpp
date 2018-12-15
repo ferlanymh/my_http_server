@@ -138,7 +138,7 @@ class Request//存储http请求的各项数据信息
     }
     bool IsNeedReadText()
     {
-      if (strcasecmp(method.c_str(),"POST"))
+      if (strcasecmp(method.c_str(),"POST") == 0)
       {
         return true;
       }
@@ -154,21 +154,23 @@ class Request//存储http请求的各项数据信息
 
     void UriParse()//解析uri，设置path与param
     {
-      if (strcmp(method.c_str(),"GET"))//如果是get方法
+      if (strcasecmp(method.c_str(),"GET") == 0)//如果是get方法
       {
         
         size_t pos_ = uri.find('?');
-        if (pos_ != string::npos)
+        if (string::npos !=pos_)
         {
           //说明在uri中发现了字符'?'，那么显而易见的这个方法是GET且'?'后面是资源参数
           //'?'前面的是path，'?'后面的是param
           cgi=true;
-          path += uri.substr(pos_);//
+          path += uri.substr(0 , pos_);//
+
           param = uri.substr(pos_ + 1);
         }
         else//说明uri中不含参数，直接全粘在path后面即可
         {
           path += uri;
+          cout<<"the path is :"<<path<<endl;
         }
       }
       else//说明是POST方法
@@ -178,42 +180,48 @@ class Request//存储http请求的各项数据信息
       if (path[path.size()-1]=='/')
       {
         //当path以'/'结尾，说明path指的是根目录，我们需要给他返回一个默认首页。
-        path += WEB_ROOT;
+        path += HOME_PAGE;
       }
     }
 
     bool RequestHeadParse()
     {
       //请求报头之前已经放置在rq_head中了，直接拆字串放进unordered_map里
-      string sub_string_ = "";
-      size_t start = 0;
+      
+      int start = 0;
       while (start < rq_head.size())
       {
         size_t pos = rq_head.find('\n' , start);
         if (pos == string::npos)
         {
+
           break;
         }
-        else
-        {
-          sub_string_ = rq_head.substr(start,pos-start);//找到了以'\n'分隔的各个子串
-          start = pos + 1;
-          if (sub_string_.empty())
+        
+        
+         string sub_string_ = rq_head.substr(start,pos-start);//找到了以'\n'分隔的各个子串
+          if (!sub_string_.empty())
           {
             //在这里又要把字串拆分成一个个的键值对并插入head_kv中
+            Log(INFO,"request head parse is not empty!!");
             StringUtil::MakeKV(head_kv,sub_string_);
           }
           else
-            break;
-        }
+          {
+            Log(INFO,"the head of request is empty!!");
+
+          }    
+        
+          start = pos + 1;
       }
       return true;
     }
 
     bool CheckMethodLegal()//检查method
     {
-      cgi=strcasecmp(method.c_str(),"POST");
-      if (strcasecmp(method.c_str(),"GET") || cgi)
+      if ((strcasecmp(method.c_str(),"GET") ==0 ) ||\
+          (cgi= (strcasecmp(method.c_str(),"POST") ==0)) )
+
       {
         return true;
       }
@@ -226,7 +234,7 @@ class Request//存储http请求的各项数据信息
     {
       //这里使用stat函数，判断Path路径下是否有我们想要的资源。
       struct stat s;
-      if (!stat(path.c_str(),&s) )
+      if (stat(path.c_str(),&s) < 0  )
       {
         //说明该路径非法
         Log(WARNING,"the path is illegal!!");
@@ -249,11 +257,16 @@ class Request//存储http请求的各项数据信息
             (s.st_mode & S_IXGRP) ||\
             (s.st_mode & S_IXOTH))
         {
-          cgi = true;
+           cgi=true ;
         }
       }
 
       resource_size=s.st_size;
+      std::size_t pos =path.rfind(".");
+      if (string::npos != pos)
+      {
+        suffix = path.substr(pos);
+      }
       return true;
     }
 
@@ -306,8 +319,33 @@ class Response//存储http响应的各项数据信息
     {
       return fd;
     }
-   
-   
+    void OpenResource(Request* &rq_)
+    {
+      string path_ = rq_->GetPath();
+      fd = open(path_.c_str(),O_RDONLY);
+    }
+    void MakeResponseLine()
+    {
+      rsp_line = HTTP_VERSION;
+      rsp_line += " ";
+      rsp_line +=StringUtil::IntToString(code);
+      rsp_line += " ";
+      rsp_line +=StringUtil::CodeToDesc(code);
+      rsp_line +="\n";
+    }
+
+    void MakeResponseHead(Request* &rq_)
+    {
+      rsp_head = "Content-Length: ";
+      rsp_head += StringUtil::IntToString(rq_->GetResource_size());
+      rsp_head += "\n";
+
+      rsp_head += "Content-Type: ";
+      std::string suffix_ = rq_->GetSuffix();
+      rsp_head += StringUtil::SuffixToType(suffix_); 
+      rsp_head += "\n";
+    }
+
     ~Response()
     {
       if (fd>=0)
@@ -320,90 +358,114 @@ class Response//存储http响应的各项数据信息
 
 class Connect//这个结构体专门提供读取http请求与设计http响应并返回资源的函数接口。
 {
-private:
-	int sock;
-public:
-	Connect(int sock_) :sock(sock_)
-	{}
+  private:
+    int sock;
+  public:
+    Connect(int sock_):sock(sock_)
+  {}
 
-	void RecvRequestHead(std::string &head_)
-	{
-		head_ = "";
-		std::string line_;
-		while (line_ != "\n") {
-			line_ = "";
-			RecvOneLine(line_);
-			head_ += line_;
-		}
-	}
-	int RecvOneLine(string& str)//一个一个字符读，直到读完一行
-	{
-		
-		char c = 'J';//随便给c赋个值，只要不是"\n"就行
-		while (c != '\n')
-		{
-			ssize_t s = recv(sock, &c, 1, 0);
-			//根据上面的分析，我们读取到"\r"后，仍不能确定是否已经读完一行，因为后面
-			//可能还有1个"\n"。但是如果贸然再读一个字符，可能会把下一行的数据给读走，这就拿走了本不应该
-			//读取的数据。
-			
-			if (s > 0)
-			{
-				if (c == '\r')
-				{
-					recv(sock, &c, 1, MSG_PEEK);
-					if (c == '\n')
-					{
-						//运行到这里说明读到的是"\r\n"，这时候就要把这个字符从缓冲区中真正的读出来。然后算作一行读完
-						recv(sock, &c, 1, 0);
-					}
-
-					else
-					{
-						//运行到这里说明窥探的字符并不是"\n",所以"\r"就是一行的结尾。
-						c = '\n';
-					}
-
-				}
-				str.push_back(c);
-			}
-			else
-			{
-				break;
-			}
-		}
-		return str.size();
-	}
-
-	void ReadRqHead(string& rq_head)
-	{
-		//报头可能有很多行，所以我们只要循环调用RecvOneLine即可。
-		string line_;
-		rq_head = "";
-		while (strcmp(line_.c_str(), "\n"))//报头以'\n'为结尾，读到最后一行时，line_内的数据就是"\n"
-		{
-			line_ = "";//这里要注意每次进入循环时要将line_置为空，因为每行读的数据都还在line_里，要注意！
-			RecvOneLine(line_);
-			rq_head += line_;
-		}
-
-	}
-	void RecvRequestText(string &text_, int len, string& param)
-	{
-		char c;
-		int i = 0;
-		while (i < len)
-		{
-			recv(sock, &c, 1, 0);
-			text_.push_back(c);
-		}
-		param = text_;
-	}
+    void RecvRequestHead(std::string &head_)
+    {
+      head_ = "";
+      std::string line_;
+      while(line_ != "\n"){
+        line_ = "";
+        RecvOneLine(line_);
+        head_ += line_;
+      }
+    }
+    int RecvOneLine(string& str)//一个一个字符读，直到读完一行
+    {
+      //这里要做一个说明：因为浏览器(服务端)的版本不同，他们对于读完一行的标志不同。
+      //有的认为读到"\n"算读完一行，有的认为读到"\n\r"算读完一行，甚至有的认为读到"\r"就算读完一行。
+      //那么如果不统一，那么后期的对请求和响应的处理会很冗杂，故在此同一转换为"\n"算读完一行。
+      //
+      char c='J';//随便给c赋个值，只要不是"\n"就行
+      while (c!='\n')
+      {
+        ssize_t s = recv( sock , &c , 1 ,0);
 
 
 
+        //这里要注意一个坑！根据上面的分析，我们读取到"\r"后，仍不能确定是否已经读完一行，因为后面
+        //可能还有1个"\n"。但是如果贸然再读一个字符，可能会把下一行的数据给读走，这就拿走了本不应该
+        //读取的数据。
+        //所以这里我们要引入一个参数MSG_PEEK(窥探)，这个值可以作为recv的第四个参数，他的功能
+        //是读取数据的拷贝，但并不从缓冲区中拿走这个数据。引用这个参数我们就能轻松解决这个问题了~
+        if (s > 0)
+        {
+          if (c=='\r')
+          {
+            recv( sock ,&c ,1 ,MSG_PEEK );
+            if (c=='\n')
+            {
+              //运行到这里说明读到的是"\r\n"，这时候就要把这个字符从缓冲区中真正的读出来。然后算作一行读完
+              recv(sock,&c,1,0);
+            }
 
-}
+            else
+            {
+              //运行到这里说明窥探的字符并不是"\n",所以"\r"就是一行的结尾。
+              c='\n';
+            }
+
+          }
+          str.push_back(c);
+        }
+        else
+        {
+          break;
+        }
+      }
+      return str.size();
+    }
+
+    void ReadRqHead(string& rq_head)
+    {
+      //报头可能有很多行，所以我们只要循环调用RecvOneLine即可。
+      string line_;
+      rq_head = "";
+      while(strcmp(line_.c_str(),"\n"))//报头以'\n'为结尾，读到最后一行时，line_内的数据就是"\n"
+      {
+        line_ = "";//这里要注意每次进入循环时要将line_置为空，因为每行读的数据都还在line_里，要注意！
+        RecvOneLine(line_);
+        rq_head += line_;
+      }
+
+    }
+    void RecvRequestText(string &text_,int len,string& param)
+    {
+      char c;
+      int i=0;
+      while (i<len)
+      {
+        recv(sock,&c , 1 , 0);
+        text_.push_back(c); 
+      }
+      param = text_;
+    }
+    
+    void SendResponse(Response* &rsp_,Request* &rq_)
+    {
+      //发送数据
+      string &rsp_line = rsp_->GetLine();
+      string &rsp_head = rsp_->GetHead();
+      string &blank = rsp_->GetBlank();
+      
+      send(sock,rsp_line.c_str(),rsp_line.size(),0);
+      send(sock,rsp_head.c_str(),rsp_head.size(),0);
+      send(sock,blank.c_str(),blank.size(),0);
+      if (rq_->IsCgi())
+      {
+        ;
+      }
+      else
+      {
+        sendfile(sock,rsp_->GetFd(),NULL,rq_->GetResource_size());
+      }
+      
+
+    }
 
     ~Connect()
     {
@@ -417,6 +479,28 @@ public:
 class Entry//内部只有RequestHandler入口函数，RequestHandler函数是统领全局的函数，调用其他类的接口完成读取请求并返回响应。
 {
   public:
+   static void ProcessNoneCgi(Connect* &conn_,Request* &rq_,Response* &rsp_)
+    {
+      rsp_->MakeResponseLine();//响应首行
+      rsp_->MakeResponseHead(rq_);//响应报头
+      rsp_->OpenResource(rq_);//将资源打开，用fd描述之
+      conn_->SendResponse(rsp_ , rq_);//发送响应
+       
+       
+    }
+    static void MakeResponse(Connect* &conn_,Request* &rq_,Response* &rsp_)
+    {
+      if (rq_->IsCgi())
+      {
+        Log(INFO,"need cgi response!!");
+        //ProcessCgi(conn_,rq_,rsp_);
+      }
+      else 
+      {
+        Log(INFO,"do not need cgi response!!");
+        ProcessNoneCgi(conn_,rq_,rsp_);
+      }
+    }
     static void* RequestHandler(void *arg_)
     {
       //因为要实现读取请求并返回响应，故创建connect,response,request对象，分别调用他们的接口。
@@ -428,12 +512,14 @@ class Entry//内部只有RequestHandler入口函数，RequestHandler函数是统
 
       //接下来的步骤就是读取http请求，先对请求中的首行进行解析
       conn_->RecvOneLine(rq_->rq_line);
+      cout<<rq_->getline()<<endl;
       rq_->RequestLineParse();//旨在将rq_line的内容分别放在3个字段中
 
       int& code_ = rsp_->getcode();//获取状态吗
 
       if (!(rq_->CheckMethodLegal()) )//判断方法的合法性，顺便判断后面处理数据是否需要使用cgi
       {
+        Log(ERROR,"request method is illegal");
         code_ = NOT_FOUND;
         goto end;
       }
@@ -446,7 +532,7 @@ class Entry//内部只有RequestHandler入口函数，RequestHandler函数是统
         code_ = NOT_FOUND;
         goto end; 
       }
-
+      
       Log(INFO,"the path of resource is ok!!");
 
       //版本这里就不作解读了
@@ -459,21 +545,26 @@ class Entry//内部只有RequestHandler入口函数，RequestHandler函数是统
       }
       else
       {
+        
+        Log(ERROR,"request head is illegal");
         code_=NOT_FOUND;
         goto end;
       }
-
+      
       //报头报读完毕后，要检查是否有正文存在
       if (rq_->IsNeedReadText())
       {
         //读取正文
         conn_->RecvRequestText(rq_->rq_text,rq_->GetContentLength(),rq_->GetParam());
+        
       }
 
       //到此读完请求
       Log(INFO,"handler request is done!!!");
+      MakeResponse(conn_,rq_,rsp_);//开始发送响应
 
-   
+      
+      //到这里响应发出，程序结束！
 
 end:
       if (code_!=OK)
