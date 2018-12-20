@@ -12,6 +12,7 @@
 #include<unistd.h>
 #include<stdlib.h>
 #include<sys/types.h>
+#include<sys/wait.h>
 #include<sys/socket.h>
 #include<arpa/inet.h>
 #include<netinet/in.h>
@@ -105,7 +106,7 @@ class Request//存储http请求的各项数据信息
   
   
   public:
-    Request():blank("\n"),cgi(false),path(WEB_ROOT),resource_size(0),content_length(-1)
+    Request():blank("\n"),cgi(false),path(WEB_ROOT),resource_size(0),content_length(-1),suffix(".html")
   {}
 
     std::string& GetPath()
@@ -124,6 +125,11 @@ class Request//存储http请求的各项数据信息
     {
       return resource_size;
     }
+    void SetResource_size(int res_size)
+    {
+      resource_size = res_size;
+    }
+
     int GetContentLength()
     {
       string cont_len = head_kv["Content-Length"];
@@ -189,7 +195,7 @@ class Request//存储http请求的各项数据信息
       //请求报头之前已经放置在rq_head中了，直接拆字串放进unordered_map里
       
       int start = 0;
-      while (start < rq_head.size())
+      while (start<rq_head.size())
       {
         size_t pos = rq_head.find('\n' , start);
         if (pos == string::npos)
@@ -299,6 +305,10 @@ class Response//存储http响应的各项数据信息
     string& GetLine()
     {
       return rsp_line;
+    }
+    string& GetText()
+    {
+      return rsp_text;
     }
 
     string& GetHead()
@@ -451,13 +461,13 @@ class Connect//这个结构体专门提供读取http请求与设计http响应并
       string &rsp_line = rsp_->GetLine();
       string &rsp_head = rsp_->GetHead();
       string &blank = rsp_->GetBlank();
-      
+      string &rsp_text = rsp_->GetText();
       send(sock,rsp_line.c_str(),rsp_line.size(),0);
       send(sock,rsp_head.c_str(),rsp_head.size(),0);
       send(sock,blank.c_str(),blank.size(),0);
       if (rq_->IsCgi())
       {
-        ;
+        send(sock,rsp_text.c_str(),rsp_text.size(),0);
       }
       else
       {
@@ -479,6 +489,89 @@ class Connect//这个结构体专门提供读取http请求与设计http响应并
 class Entry//内部只有RequestHandler入口函数，RequestHandler函数是统领全局的函数，调用其他类的接口完成读取请求并返回响应。
 {
   public:
+    static void ProcessCgi(Connect* &conn_,Request* &rq_,Response* &rsp_)
+    {
+       int& code_ = rsp_->getcode();
+       //cgi方式处理
+       int input[2];//父进程将参数送至子进程的匿名管道
+       int output[2];//子进程处理完参数送回父进程的匿名管道
+       pipe(input);
+       pipe(output);
+
+
+       pid_t pid = fork();
+       if (pid < 0 )
+       {
+          
+          Log(ERROR,"fork process is failed!!!");
+          return ;
+       }
+
+       if (pid == 0)//child
+       {
+          close(input[1]);
+          close(output[0]);
+
+
+          std::string param_ = rq_->GetParam();
+          std::string cl_env_ = "Content-Length=";
+          cl_env_ += StringUtil::IntToString(param_.size());
+          putenv((char*)cl_env_.c_str());//给当前进程的上下文中添加自定义环境变量。
+          
+          //当子进程执行exec函数时，无法找到匿名管道对应的文件描述符，
+          //所以我们重定向至0，1
+          dup2(input[0] ,0);
+          dup2(output[1] ,1);
+          
+          string path_ = rq_->GetPath();
+          execl(path_.c_str(),path_.c_str(),nullptr);
+
+          //运行到此处说明exec调用失败
+          Log(ERROR,"use execl function is failed!!");
+          exit(1);
+       }
+
+       else//parent
+       {
+          close(input[0]);
+          close(output[1]);
+
+          string param_ = rq_->GetParam();
+          const char *ptr = param_.c_str();
+          size_t total = param_.size();//要给子进程发送的数据长度
+          size_t already_send = 0;//当前已经发送的长度
+          size_t size = 0;//本次发送的长度
+          
+          while (total > already_send)
+          {
+             size = write(input[1], ptr + already_send  ,total - already_send );
+             if (size)
+             {
+               already_send += size;
+             }
+             else
+             {
+               break;
+             }
+             
+          }
+           
+          char c;
+          while ( (size=read(output[0], &c ,1 ) > 0 ) )
+          {
+            rsp_->GetText().push_back(c);
+          }
+
+          waitpid(pid,NULL,0);
+          close(input[1]);
+          close(output[0]);
+
+          rsp_->MakeResponseLine();
+          rq_->SetResource_size(rsp_->GetText().size());//注意响应报头中content-length可能改变，要重新设置      
+          rsp_->MakeResponseHead(rq_);
+          conn_->SendResponse(rsp_,rq_);
+       }   
+    }
    static void ProcessNoneCgi(Connect* &conn_,Request* &rq_,Response* &rsp_)
     {
       rsp_->MakeResponseLine();//响应首行
@@ -492,12 +585,12 @@ class Entry//内部只有RequestHandler入口函数，RequestHandler函数是统
     {
       if (rq_->IsCgi())
       {
-        Log(INFO,"need cgi response!!");
-        //ProcessCgi(conn_,rq_,rsp_);
+        Log(INFO,"The request needs cgi response!!");
+        ProcessCgi(conn_,rq_,rsp_);
       }
       else 
       {
-        Log(INFO,"do not need cgi response!!");
+        Log(INFO,"The request does not need cgi response!!");
         ProcessNoneCgi(conn_,rq_,rsp_);
       }
     }
