@@ -16,4 +16,13 @@ cal:
 	g++ -o cal cal.cc
 .PHONY:clean
 clean:
-	rm -f $(bin) Cal testcgi cal
+	rm -rf $(bin)  testcgi cal output 
+
+.PHONY:output
+output:
+	mkdir output
+	 cp $(bin) output 
+	 cp -rf mywwwroot output 
+	 cp cal output/mywwwroot
+	 cp start.sh output 
+	 

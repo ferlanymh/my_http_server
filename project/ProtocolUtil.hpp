@@ -25,14 +25,19 @@
 #include"Log.hpp"
 #define WEB_ROOT "mywwwroot"
 #define HOME_PAGE "index.html"
+#define PAGE_404 "404.html"
 #define OK 200
 #define NOT_FOUND 404 
+#define BAD_REQUEST 400
+#define SERVER_ERROR 500
+
+
 #define HTTP_VERSION "HTTP/1.0"
 using namespace std;
 
 unordered_map<string,string> suffix_map 
 {
-    {".html","text/html"},
+  {".html","text/html"},
     {".htm","text/html"},
     {".css","text/css"},
     {".js","application/x-javascript"}
@@ -58,14 +63,19 @@ class StringUtil{
         case 200:
           return "OK";
 
+        case 400:
+          return "BAD_REQUEST";
+
         case 404:
           return "NOT FOUND";
-          
+
+        case 500:
+          return "Internal Serval Error";
         default:
-        return "UNKNOW";
+          return "Unknow";
       }
     }
-    
+
     static void MakeKV(std::unordered_map<std::string, std::string> &kv_,\
         std::string &str_)
     {
@@ -103,8 +113,8 @@ class Request//存储http请求的各项数据信息
     unordered_map<string,string> head_kv;//报头解析后放置的容器里
     int content_length;//正文长度
     std::string suffix;//请求资源的后缀名
-  
-  
+
+
   public:
     Request():blank("\n"),cgi(false),path(WEB_ROOT),resource_size(0),content_length(-1),suffix(".html")
   {}
@@ -113,9 +123,17 @@ class Request//存储http请求的各项数据信息
     {
       return path;
     }
+    void SetPath(string path_)
+    {
+      path = path_;
+    }
     std::string& GetSuffix()
     {
       return suffix;
+    }
+    std::string& SetSuffix(string suffix_)
+    {
+      suffix = suffix_;
     }
     bool IsCgi()
     {
@@ -162,7 +180,7 @@ class Request//存储http请求的各项数据信息
     {
       if (strcasecmp(method.c_str(),"GET") == 0)//如果是get方法
       {
-        
+
         size_t pos_ = uri.find('?');
         if (string::npos !=pos_)
         {
@@ -176,7 +194,6 @@ class Request//存储http请求的各项数据信息
         else//说明uri中不含参数，直接全粘在path后面即可
         {
           path += uri;
-          cout<<"the path is :"<<path<<endl;
         }
       }
       else//说明是POST方法
@@ -193,9 +210,9 @@ class Request//存储http请求的各项数据信息
     bool RequestHeadParse()
     {
       //请求报头之前已经放置在rq_head中了，直接拆字串放进unordered_map里
-      
+
       int start = 0;
-      while (start<rq_head.size())
+      while ((size_t)start<rq_head.size())
       {
         size_t pos = rq_head.find('\n' , start);
         if (pos == string::npos)
@@ -203,22 +220,22 @@ class Request//存储http请求的各项数据信息
 
           break;
         }
-        
-        
-         string sub_string_ = rq_head.substr(start,pos-start);//找到了以'\n'分隔的各个子串
-          if (!sub_string_.empty())
-          {
-            //在这里又要把字串拆分成一个个的键值对并插入head_kv中
-            Log(INFO,"request head parse is not empty!!");
-            StringUtil::MakeKV(head_kv,sub_string_);
-          }
-          else
-          {
-            Log(INFO,"the head of request is empty!!");
 
-          }    
-        
-          start = pos + 1;
+
+        string sub_string_ = rq_head.substr(start,pos-start);//找到了以'\n'分隔的各个子串
+        if (!sub_string_.empty())
+        {
+          //在这里又要把字串拆分成一个个的键值对并插入head_kv中
+          Log(INFO,"request head parse is not empty!!");
+          StringUtil::MakeKV(head_kv,sub_string_);
+        }
+        else
+        {
+          Log(INFO,"the head of request is empty!!");
+
+        }    
+
+        start = pos + 1;
       }
       return true;
     }
@@ -229,6 +246,8 @@ class Request//存储http请求的各项数据信息
           (cgi= (strcasecmp(method.c_str(),"POST") ==0)) )
 
       {
+        Log(INFO,"method is legal!!");
+        
         return true;
       }
       else
@@ -243,7 +262,7 @@ class Request//存储http请求的各项数据信息
       if (stat(path.c_str(),&s) < 0  )
       {
         //说明该路径非法
-        Log(WARNING,"the path is illegal!!");
+        Log(WARNING,"The path is illegal!!");
         return false;
       }
 
@@ -263,7 +282,7 @@ class Request//存储http请求的各项数据信息
             (s.st_mode & S_IXGRP) ||\
             (s.st_mode & S_IXOTH))
         {
-           cgi=true ;
+          cgi=true ;
         }
       }
 
@@ -394,9 +413,6 @@ class Connect//这个结构体专门提供读取http请求与设计http响应并
       while (c!='\n')
       {
         ssize_t s = recv( sock , &c , 1 ,0);
-
-
-
         //这里要注意一个坑！根据上面的分析，我们读取到"\r"后，仍不能确定是否已经读完一行，因为后面
         //可能还有1个"\n"。但是如果贸然再读一个字符，可能会把下一行的数据给读走，这就拿走了本不应该
         //读取的数据。
@@ -427,6 +443,7 @@ class Connect//这个结构体专门提供读取http请求与设计http响应并
           break;
         }
       }
+      
       return str.size();
     }
 
@@ -450,11 +467,12 @@ class Connect//这个结构体专门提供读取http请求与设计http响应并
       while (i<len)
       {
         recv(sock,&c , 1 , 0);
-        text_.push_back(c); 
+        text_.push_back(c);
+        i++;
       }
       param = text_;
     }
-    
+
     void SendResponse(Response* &rsp_,Request* &rq_)
     {
       //发送数据
@@ -473,7 +491,7 @@ class Connect//这个结构体专门提供读取http请求与设计http响应并
       {
         sendfile(sock,rsp_->GetFd(),NULL,rq_->GetResource_size());
       }
-      
+
 
     }
 
@@ -491,95 +509,95 @@ class Entry//内部只有RequestHandler入口函数，RequestHandler函数是统
   public:
     static void ProcessCgi(Connect* &conn_,Request* &rq_,Response* &rsp_)
     {
-       int& code_ = rsp_->getcode();
-       //cgi方式处理
-       int input[2];//父进程将参数送至子进程的匿名管道
-       int output[2];//子进程处理完参数送回父进程的匿名管道
-       pipe(input);
-       pipe(output);
+      int& code_ = rsp_->getcode();
+      //cgi方式处理
+      int input[2];//父进程将参数送至子进程的匿名管道
+      int output[2];//子进程处理完参数送回父进程的匿名管道
+      pipe(input);
+      pipe(output);
 
 
-       pid_t pid = fork();
-       if (pid < 0 )
-       {
-          
-          Log(ERROR,"fork process is failed!!!");
-          return ;
-       }
+      pid_t pid = fork();
+      if (pid < 0 )
+      {
+        code_ = SERVER_ERROR;
+        Log(ERROR,"fork process is failed!!!");
+        return ;
+      }
 
-       if (pid == 0)//child
-       {
-          close(input[1]);
-          close(output[0]);
+      if (pid == 0)//child
+      {
+        close(input[1]);
+        close(output[0]);
 
 
-          std::string param_ = rq_->GetParam();
-          std::string cl_env_ = "Content-Length=";
-          cl_env_ += StringUtil::IntToString(param_.size());
-          putenv((char*)cl_env_.c_str());//给当前进程的上下文中添加自定义环境变量。
-          
-          //当子进程执行exec函数时，无法找到匿名管道对应的文件描述符，
-          //所以我们重定向至0，1
-          dup2(input[0] ,0);
-          dup2(output[1] ,1);
-          
-          string path_ = rq_->GetPath();
-          execl(path_.c_str(),path_.c_str(),nullptr);
+        std::string param_ = rq_->GetParam();
+        std::string cl_env_ = "Content-Length=";
+        cl_env_ += StringUtil::IntToString(param_.size());
+        putenv((char*)cl_env_.c_str());//给当前进程的上下文中添加自定义环境变量。
 
-          //运行到此处说明exec调用失败
-          Log(ERROR,"use execl function is failed!!");
-          exit(1);
-       }
+        //当子进程执行exec函数时，无法找到匿名管道对应的文件描述符，
+        //所以我们重定向至0，1
+        dup2(input[0] ,0);
+        dup2(output[1] ,1);
 
-       else//parent
-       {
-          close(input[0]);
-          close(output[1]);
+        string path_ = rq_->GetPath();
+        execl(path_.c_str(),path_.c_str(),nullptr);
 
-          string param_ = rq_->GetParam();
-          const char *ptr = param_.c_str();
-          size_t total = param_.size();//要给子进程发送的数据长度
-          size_t already_send = 0;//当前已经发送的长度
-          size_t size = 0;//本次发送的长度
-          
-          while (total > already_send)
+        //运行到此处说明exec调用失败
+        Log(ERROR,"use execl function is failed!!");
+        exit(1);
+      }
+
+      else//parent
+      {
+        close(input[0]);
+        close(output[1]);
+
+        string param_ = rq_->GetParam();
+        const char *ptr = param_.c_str();
+        size_t total = param_.size();//要给子进程发送的数据长度
+        size_t already_send = 0;//当前已经发送的长度
+        size_t size = 0;//本次发送的长度
+
+        while (total > already_send)
+        {
+          size = write(input[1], ptr + already_send  ,total - already_send );
+          if (size)
           {
-             size = write(input[1], ptr + already_send  ,total - already_send );
-             if (size)
-             {
-               already_send += size;
-             }
-             else
-             {
-               break;
-             }
-             
+            already_send += size;
           }
-           
-          char c;
-          while ( (size=read(output[0], &c ,1 ) > 0 ) )
+          else
           {
-            rsp_->GetText().push_back(c);
+            break;
           }
 
-          waitpid(pid,NULL,0);
-          close(input[1]);
-          close(output[0]);
+        }
 
-          rsp_->MakeResponseLine();
-          rq_->SetResource_size(rsp_->GetText().size());//注意响应报头中content-length可能改变，要重新设置      
-          rsp_->MakeResponseHead(rq_);
-          conn_->SendResponse(rsp_,rq_);
-       }   
+        char c;
+        while ( (size=read(output[0], &c ,1 ) > 0 ) )
+        {
+          rsp_->GetText().push_back(c);
+        }
+
+        waitpid(pid,NULL,0);
+        close(input[1]);
+        close(output[0]);
+
+        rsp_->MakeResponseLine();
+        rq_->SetResource_size(rsp_->GetText().size());//注意响应报头中content-length可能改变，要重新设置      
+        rsp_->MakeResponseHead(rq_);
+        conn_->SendResponse(rsp_,rq_);
+      }   
     }
-   static void ProcessNoneCgi(Connect* &conn_,Request* &rq_,Response* &rsp_)
+    static void ProcessNoneCgi(Connect* &conn_,Request* &rq_,Response* &rsp_)
     {
       rsp_->MakeResponseLine();//响应首行
       rsp_->MakeResponseHead(rq_);//响应报头
       rsp_->OpenResource(rq_);//将资源打开，用fd描述之
       conn_->SendResponse(rsp_ , rq_);//发送响应
-       
-       
+
+
     }
     static void MakeResponse(Connect* &conn_,Request* &rq_,Response* &rsp_)
     {
@@ -594,38 +612,73 @@ class Entry//内部只有RequestHandler入口函数，RequestHandler函数是统
         ProcessNoneCgi(conn_,rq_,rsp_);
       }
     }
-    static void* RequestHandler(void *arg_)
+
+    static void Process404( Request *&rq_,Response* &rsp_,Connect* &conn_)
+    {
+      std::string path_ = WEB_ROOT;
+      path_ += "/";
+      path_ += PAGE_404;
+      struct stat st;
+      stat(path_.c_str(), &st);
+
+      rq_->SetResource_size(st.st_size);
+      rq_->SetSuffix(".html");
+      rq_->SetPath(path_);
+
+      ProcessNoneCgi(conn_,rq_,rsp_);
+    }
+    static void Handler_Error( Request *&rq_,Response* &rsp_,Connect* &conn_)
+    {
+      int& code = rsp_->getcode();
+      switch(code)
+      {
+        case 400:
+          break;
+
+        case 404:
+          Process404(rq_,rsp_,conn_);
+          break;
+
+        case 500:
+          break;
+
+        case 503:
+          break;
+      }
+    }
+    static int  RequestHandler(int sock_)
     {
       //因为要实现读取请求并返回响应，故创建connect,response,request对象，分别调用他们的接口。
-      int sock_ = *(int*)arg_;
-      delete (int*)arg_;
       Connect *conn_ = new Connect(sock_);
       Request *rq_ = new Request();
       Response *rsp_ = new Response();
 
       //接下来的步骤就是读取http请求，先对请求中的首行进行解析
       conn_->RecvOneLine(rq_->rq_line);
+      Log(INFO,"get rq_line!!");
       cout<<rq_->getline()<<endl;
       rq_->RequestLineParse();//旨在将rq_line的内容分别放在3个字段中
-
+      Log(INFO,"rq_line parse done!!");
       int& code_ = rsp_->getcode();//获取状态吗
 
       if (!(rq_->CheckMethodLegal()) )//判断方法的合法性，顺便判断后面处理数据是否需要使用cgi
       {
+        conn_->ReadRqHead(rq_->rq_head);//退出前要读完请求！
         Log(ERROR,"request method is illegal");
-        code_ = NOT_FOUND;
+        code_ = BAD_REQUEST;
         goto end;
       }
 
       //运行到这里说明方法已经合法，现在进行uri的解析。
       rq_->UriParse();
-
+      Log(INFO,"uri parse is done!!");
       if (!rq_->CheckPathLegal( ))
       {
+        conn_->ReadRqHead(rq_->rq_head);
         code_ = NOT_FOUND;
         goto end; 
       }
-      
+
       Log(INFO,"the path of resource is ok!!");
 
       //版本这里就不作解读了
@@ -638,38 +691,39 @@ class Entry//内部只有RequestHandler入口函数，RequestHandler函数是统
       }
       else
       {
-        
+
         Log(ERROR,"request head is illegal");
-        code_=NOT_FOUND;
+        code_=BAD_REQUEST;
         goto end;
       }
-      
+       
       //报头报读完毕后，要检查是否有正文存在
       if (rq_->IsNeedReadText())
       {
         //读取正文
         conn_->RecvRequestText(rq_->rq_text,rq_->GetContentLength(),rq_->GetParam());
-        
+        Log(INFO,"rq_text is done!");
       }
 
       //到此读完请求
       Log(INFO,"handler request is done!!!");
-      MakeResponse(conn_,rq_,rsp_);//开始发送响应
-
+     
       
+      MakeResponse(conn_,rq_,rsp_);//开始发送响应
+      Log(INFO,"response is already send!!");
+
       //到这里响应发出，程序结束！
 
 end:
       if (code_!=OK)
       {
-        //到这里说明请求出错，需要处理错误
-        //HandlerError(sock_);
+        Handler_Error(rq_,rsp_,conn_);
       }
 
       delete rsp_;
       delete rq_;
       delete conn_;
-
+      close(sock_);
     }
 
 

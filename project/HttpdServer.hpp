@@ -2,17 +2,21 @@
 #define __HTTPD_SERVER_HPP__
 
 //服务器的初始化及启动
+#include<pthread.h>
 #include"ProtocolUtil.hpp"
+#include"ThreadPool.hpp"
 
 class HttpdServer
 {
     private:
         int listen_sock;//监听scoket套接字，用于接收客户端发来的请求
         int port;//端口号
+        ThreadPool* tp;//线程池
     public:
         HttpdServer(int port_)
             :listen_sock(-1)
              ,port(port_)
+             ,tp(NULL)
     {}
 
 
@@ -60,7 +64,8 @@ class HttpdServer
             }
 
             Log(INFO,"InitServer Success!!");
-
+            tp = new ThreadPool();
+            tp->initThreadPool();
         }
         
         
@@ -79,22 +84,9 @@ class HttpdServer
                     continue;
                 }
                 
-                
-                //运行到这里说明成功接收到客户端请求，开始创建新线程来处理
-                pthread_t tid_;
-                
-                int *tmp=new int;
-                
-                *tmp = sock_;
-                
-                Log(INFO,"Get a new client! Create a new thread handle the request!!");
-                int ret=pthread_create(&tid_, NULL , Entry::RequestHandler , (void*)tmp );
-                //具体实现在protocolutil头文件中
-                if (ret!=0)
-                {
-                    Log(WARNING ,"create thread failed!!!");
-                    continue;
-                }
+                Task t;
+                t.SetTask(sock_,Entry::RequestHandler);
+                tp->PushTask(t);
             }   
         }
 

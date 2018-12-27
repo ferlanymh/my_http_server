@@ -13,7 +13,7 @@ int main(int argc,char *argv[])
         return_error(argv[0]);
         exit(1);
     }
-
+    signal(SIGPIPE,SIG_IGN);
     HttpdServer *serp = new HttpdServer(atoi(argv[1]));
     //构建一个HttpdServer对象，该对象的定义在HttpdServer.hpp中,并将端口号传给该对象
     

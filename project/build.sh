@@ -2,5 +2,4 @@
 
 make clean
 make
-mv cal mywwwroot/
-mv testcgi mywwwroot/
+make output
