@@ -8,7 +8,19 @@
  3. 使用线程池控制服务器并发链接，提高链接性能
  4. 对于请求不存在的资源可以返回404错误码及页面
  5. 使用简单的shell脚本
+ ## 效果图
  
+  主页效果图
+  ![Image_text](https://github.com/ferlanymh/my_http_server/blob/master/主页.png)
+  
+  访问某静态文件效果图
+  ![Image_text](https://github.com/ferlanymh/my_http_server/blob/master/login.png)
+  
+  简单CGI效果图
+  ![Image_text](https://github.com/ferlanymh/my_http_server/blob/master/简单cgi.png)
+ 
+  访问错误，返回404效果图
+ ![Image_text](https://github.com/ferlanymh/my_http_server/blob/master/404.png)
 ## 项目流程
 ### 服务器启动准备工作
 
