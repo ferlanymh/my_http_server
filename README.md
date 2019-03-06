@@ -1,13 +1,14 @@
 ## 项目名称
-搭建一个小型的http服务器
+搭建一个小型的http服务器，服务器能提供在线画图，整型间简单运算的服务
 ## 项目目标
 服务器能接收用户发起的请求并做出响应，发送对应资源，或根据情况做异常处理。
 ## 应用技术
- 1. 基于http协议进行通信
- 2. 通过cgi模式处理用户请求中的参数
- 3. 使用线程池控制服务器并发链接，提高链接性能
- 4. 对于请求不存在的资源可以返回404错误码及页面
- 5. 使用简单的shell脚本
+ 1. 服务器能处理GET/POST请求，并根据请求资源的路径返回响应资源
+ 2. 能处理静态请求，能根据 URL 返回一个服务器上的静态文件（如画图板界面）
+ 3. 基于CGI技术处理HTTP请求中的参数，使用创建子进程和匿名管道处理CGI程序
+ 4. 使用线程池管理多个链接请求，提高了服务器的并发性
+ 5. 对访问不存在的资源，能返回404错误码和一个错误页面
+ 
  ## 效果图
  
   主页效果图
@@ -15,6 +16,9 @@
   
   访问某静态文件效果图
   ![Image_text](https://github.com/ferlanymh/my_http_server/blob/master/login.png)
+  
+  在线画图板效果图
+  ![Image_text](https://github.com/ferlanymh/my_http_server/blob/master/%E7%94%BB%E5%9B%BE%E6%9D%BF.png)
   
   简单CGI效果图
   ![Image_text](https://github.com/ferlanymh/my_http_server/blob/master/简单cgi.png)
