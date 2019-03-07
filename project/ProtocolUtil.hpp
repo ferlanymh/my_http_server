@@ -40,7 +40,9 @@ unordered_map<string,string> suffix_map
   {".html","text/html"},
     {".htm","text/html"},
     {".css","text/css"},
-    {".js","application/x-javascript"}
+    {".js","application/x-javascript"},
+    {".jpg", "image/jpeg"},
+    {".png", "image/png"},
 };
 
 
