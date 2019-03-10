@@ -46,6 +46,9 @@
 
 8. 调用RecvOneLine函数，获取请求行(要对"\n","\r\n","\r"都转换为\n)  知识点MSG_PEEK(窥探)
 
+Unix系统里，每行结尾只有“<换行>”，即“\n”；Windows系统里面，每行结尾是“<回车><换行>”，即“\r\n”；Mac系统里，每行结尾是“<回车>”。一个直接后果是，Unix/Mac系统下的文件在Windows里打开的话，所有文字会变成一行；而Windows里的文件在Unix/Mac下打开的话，在每行的结尾可能会多出一个符号^M（在Unix下多出一个\r，在Mac下多出一个\n）。
+
+
 9. 使用stringstream按照空格将请求行拆分后分别放入method，url，version变量中
 
 10. 对method进行解析（method检查方式是比较是否是GET/POST）
